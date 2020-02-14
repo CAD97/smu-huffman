@@ -1,4 +1,5 @@
 //! Reference: <https://www.smu.edu/-/media/Site/guildhallOLD/Documents/Huffman_Exercise.pdf>
+#![allow(clippy::identity_op, clippy::erasing_op)]
 
 use {
     arr_macro::arr,
@@ -82,7 +83,7 @@ pub fn compress(bytes: &[u8]) -> Vec<u8> {
     // it can easily be more than 8 for the less frequent values.
     let coding = HuffmanCoding::of(&tree);
 
-    let mut bits: BitVec<Local, u8> = BitVec::new();
+    let mut bits: BitVec<Lsb0, u8> = BitVec::new();
 
     // 6. To be able to decompress the file, you'll also need to store the tree
     // in the file. The easiest way to write a tree is to write it depth-first,
@@ -139,7 +140,7 @@ pub fn decompress(bytes: &[u8]) -> Vec<u8> {
         return vec![byte; bit_count]; // the counter is stored in the same place
     }
 
-    let mut bits = BitSlice::<Local, _>::from_slice(bytes)[..bit_count as usize].iter();
+    let mut bits = BitSlice::<Lsb0, _>::from_slice(bytes)[..bit_count as usize].iter();
 
     // 1. Reconstruct the tree from the file. If you read a leaf,
     // put it on a stack, if you read a node, take 2 children from
@@ -232,7 +233,7 @@ impl HuffmanCodingTree {
         }
     }
 
-    fn pull_byte<T: BitStore>(&self, bits: &mut BitSliceIter<Local, T>) -> u8 {
+    fn pull_byte<T: BitStore>(&self, bits: &mut BitSliceIter<Lsb0, T>) -> u8 {
         match self {
             &HuffmanCodingTree::Leaf { byte, .. } => byte,
             HuffmanCodingTree::Node { left, right, .. } => match bits.next() {
@@ -243,11 +244,11 @@ impl HuffmanCodingTree {
         }
     }
 
-    fn write_tree<T: BitStore>(&self, bits: &mut BitVec<Local, T>) {
+    fn write_tree<T: BitStore>(&self, bits: &mut BitVec<Lsb0, T>) {
         match self {
             &HuffmanCodingTree::Leaf { byte, .. } => {
                 bits.push(true);
-                bits.extend_from_slice(byte.bits::<Local>());
+                bits.extend_from_slice(byte.bits::<Lsb0>());
             }
             HuffmanCodingTree::Node { left, right, .. } => {
                 bits.push(false);
@@ -257,7 +258,7 @@ impl HuffmanCodingTree {
         }
     }
 
-    fn read_tree<T: BitStore>(bits: &mut BitSliceIter<Local, T>) -> Self {
+    fn read_tree<T: BitStore>(bits: &mut BitSliceIter<Lsb0, T>) -> Self {
         match bits.next() {
             Some(true) => {
                 let byte: u8 = bits.as_bitslice()[..8].load();
@@ -336,7 +337,7 @@ impl HuffmanCoding {
         }
     }
 
-    fn push_byte<T: BitStore>(&self, byte: u8, bits: &mut BitVec<Local, T>) {
+    fn push_byte<T: BitStore>(&self, byte: u8, bits: &mut BitVec<Lsb0, T>) {
         bits.extend_from_slice(&self[byte])
     }
 }
