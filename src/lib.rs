@@ -13,7 +13,10 @@ use {
 };
 
 pub fn compress(bytes: &[u8]) -> Vec<u8> {
-    assert!(!bytes.is_empty());
+    // Empty special case: compress to an empty byte string.
+    if bytes.is_empty() {
+        return Vec::new();
+    }
 
     // 2. Loop through all bytes of the file, counting the frequency of
     // occurrence of each byte. You might want to print out the resulting
@@ -32,6 +35,17 @@ pub fn compress(bytes: &[u8]) -> Vec<u8> {
         .collect();
     // Keep it sorted as a sort of poor man's priority queue.
     nodes.sort_unstable_by_key(|node| cmp::Reverse(node.frequency()));
+
+    // Special case for mono-byte: RLE "this byte, N times"
+    if nodes.len() == 1 {
+        let byte_count: u32 = bytes.len().try_into().unwrap();
+        let byte_0 = (byte_count >> (0 * 8)) as u8;
+        let byte_1 = (byte_count >> (1 * 8)) as u8;
+        let byte_2 = (byte_count >> (2 * 8)) as u8;
+        let byte_3 = (byte_count >> (3 * 8)) as u8;
+        return vec![bytes[0], byte_0, byte_1, byte_2, byte_3];
+    }
+
     assert!(nodes.len() > 1);
 
     // Repeat until the list contains just 1 node, the root of the tree.
@@ -80,7 +94,6 @@ pub fn compress(bytes: &[u8]) -> Vec<u8> {
     // write out the corresponding bits to a file. To write bits to a file,
     // you'll need to accumulate them in bytes at a time...
     // this requires the use of bit operators.
-    // NB: The bitvec library is OP
     for &byte in bytes {
         coding.push_byte(byte, &mut bits);
     }
@@ -100,19 +113,32 @@ pub fn compress(bytes: &[u8]) -> Vec<u8> {
 }
 
 pub fn decompress(bytes: &[u8]) -> Vec<u8> {
+    // Handle the empty byte string special case
+    if bytes.is_empty() {
+        return Vec::new();
+    }
+
     assert!(bytes.len() > 4);
 
     // To handle leftover trailing bits, we just put a u32 at the end
     // saying how many bits we actually want to decode from.
     // We have to reconstruct it from bytes manually.
-    let bit_count: u32 = if let [byte_0, byte_1, byte_2, byte_3] = bytes[bytes.len() - 4..] {
-        0 | (byte_0 as u32) << (0 * 8)
-            | (byte_1 as u32) << (1 * 8)
-            | (byte_2 as u32) << (2 * 8)
-            | (byte_3 as u32) << (3 * 8)
+    #[rustfmt::skip]
+    let bit_count = if let [byte_0, byte_1, byte_2, byte_3] = bytes[bytes.len() - 4..] {
+        0   | (byte_0 as usize) << (0 * 8)
+            | (byte_1 as usize) << (1 * 8)
+            | (byte_2 as usize) << (2 * 8)
+            | (byte_3 as usize) << (3 * 8)
     } else {
         unreachable!()
     };
+
+    // Handle the mono-byte special case: RLE "this byte, N times"
+    if bytes.len() == 5 {
+        let byte = bytes[0];
+        return vec![byte; bit_count]; // the counter is stored in the same place
+    }
+
     let mut bits = BitSlice::<Local, _>::from_slice(bytes)[..bit_count as usize].iter();
 
     // 1. Reconstruct the tree from the file. If you read a leaf,
@@ -278,7 +304,6 @@ impl fmt::Debug for HuffmanCoding {
 impl HuffmanCoding {
     fn of(tree: &HuffmanCodingTree) -> Self {
         let mut this = HuffmanCoding {
-            // uuuuggggghhhh (arrays of size > 32 do not yet impl Default)
             codings: arr![None; 256],
         };
         let mut path = BitVec::new();
